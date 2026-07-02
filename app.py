@@ -176,6 +176,16 @@ def main():
             else:
                 tx, ty, tz = 0.0, 0.0, 0.0
 
+            # Extract face geometry boundaries for golden feature vector
+            x_coords = landmarks[:, 0]
+            y_coords = landmarks[:, 1]
+            min_x, max_x = np.min(x_coords), np.max(x_coords)
+            min_y, max_y = np.min(y_coords), np.max(y_coords)
+            face_w = max_x - min_x
+            face_h = max_y - min_y
+            face_cx = (max_x + min_x) / 2.0
+            face_cy = (max_y + min_y) / 2.0
+
             # Draw visual debug overlays:
             # 3D Head Pose axes on Nose Tip
             estimator.draw_pose_axes(bgr_frame, rvec, tvec, camera.target_width, camera.target_height)
@@ -218,7 +228,8 @@ def main():
                             l_ratio_x, l_ratio_y,
                             r_ratio_x, r_ratio_y,
                             yaw, pitch, roll,
-                            tx, ty, tz
+                            tx, ty, tz,
+                            face_w, face_h, face_cx, face_cy
                         )
 
                         # Smooth prediction
