@@ -1,0 +1,6 @@
+numpy
+opencv-python
+mediapipe
+scikit-learn
+pyautogui
+pandas

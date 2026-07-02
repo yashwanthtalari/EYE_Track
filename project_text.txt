@@ -1,0 +1,973 @@
+# Webcam-Based Eye Gaze Estimation Engine
+
+## Engineering Design Document (v1.0)
+
+---
+
+# Project Name
+
+**VisionPoint**
+
+*A lightweight webcam-based gaze estimation engine built using OpenCV, MediaPipe and Mathematical Modeling.*
+
+---
+
+# Objective
+
+The objective of this project is to estimate **where a user is looking on a monitor using only a normal webcam**.
+
+Unlike commercial eye trackers that use infrared cameras and specialized hardware, this system relies entirely on:
+
+* OpenCV
+* MediaPipe Face Mesh
+* Mathematics
+* Calibration
+* Machine Learning Regression
+
+The final output will be an estimated point on the screen.
+
+---
+
+# Final Goal
+
+```
+Webcam
+      │
+      ▼
+Face Detection
+      │
+      ▼
+Face Mesh
+      │
+      ▼
+Eye Landmark Detection
+      │
+      ▼
+Iris Detection
+      │
+      ▼
+Head Pose Estimation
+      │
+      ▼
+Normalized Eye Geometry
+      │
+      ▼
+Calibration
+      │
+      ▼
+Prediction Model
+      │
+      ▼
+Predicted Screen Coordinate
+      │
+      ▼
+Cursor Overlay
+```
+
+---
+
+# Why This Is Difficult
+
+The webcam **does not know** where someone is looking.
+
+It only sees
+
+```
+Image Pixels
+```
+
+The computer must infer
+
+```
+Eye Position
+
+↓
+
+Eye Rotation
+
+↓
+
+Viewing Direction
+
+↓
+
+Screen Coordinate
+```
+
+This makes gaze estimation a computer vision and geometry problem.
+
+---
+
+# Core Principle
+
+The pupil moves inside the eye.
+
+When the eye rotates,
+
+```
+Eye Corners
+
+remain almost fixed
+
+while
+
+Pupil Position changes
+```
+
+Instead of measuring the pupil's absolute position,
+
+measure its **relative position** inside the eye.
+
+This removes many scaling issues.
+
+---
+
+# Complete Architecture
+
+```
+                Camera
+
+                   │
+
+           Capture Frame
+
+                   │
+
+          Face Detection
+
+                   │
+
+         Face Mesh Detection
+
+                   │
+
+        Extract Eye Landmarks
+
+                   │
+
+          Detect Iris Center
+
+                   │
+
+       Normalize Eye Geometry
+
+                   │
+
+       Estimate Head Rotation
+
+                   │
+
+      Apply Head Compensation
+
+                   │
+
+          Calibration Stage
+
+                   │
+
+        Regression Prediction
+
+                   │
+
+        Exponential Smoothing
+
+                   │
+
+      Draw Predicted Screen Dot
+```
+
+---
+
+# Required Technologies
+
+### Computer Vision
+
+* OpenCV
+
+---
+
+### Landmark Detection
+
+* MediaPipe Face Mesh
+
+---
+
+### Numerical Computation
+
+* NumPy
+
+---
+
+### Regression
+
+* Scikit-Learn
+
+---
+
+### Visualization
+
+* OpenCV Drawing API
+
+---
+
+# Folder Structure
+
+```
+VisionPoint/
+
+│
+
+├── app.py
+
+├── camera.py
+
+├── detector.py
+
+├── iris.py
+
+├── head_pose.py
+
+├── geometry.py
+
+├── calibration.py
+
+├── regression.py
+
+├── smoothing.py
+
+├── prediction.py
+
+├── overlay.py
+
+│
+
+├── data/
+
+│      calibration.csv
+
+│
+
+├── models/
+
+│      regression.pkl
+
+│
+
+└── assets/
+```
+
+---
+
+# Phase 1
+
+## Webcam
+
+Input
+
+```
+Laptop Webcam
+
+↓
+
+Video Stream
+```
+
+Responsibilities
+
+* Read frames
+* Flip horizontally
+* Resize
+* Convert to RGB
+
+Output
+
+```
+RGB Frame
+```
+
+---
+
+# Phase 2
+
+## Face Detection
+
+Use
+
+MediaPipe Face Mesh
+
+Output
+
+```
+468 Facial Landmarks
+```
+
+Each landmark contains
+
+```
+x
+
+y
+
+z
+```
+
+Example
+
+```
+Nose
+
+Left Eye
+
+Right Eye
+
+Lips
+
+Jaw
+
+Forehead
+```
+
+---
+
+# Phase 3
+
+## Eye Landmark Extraction
+
+MediaPipe already defines
+
+```
+Eye Corners
+
+Upper Eyelid
+
+Lower Eyelid
+
+Iris Points
+```
+
+Extract
+
+```
+Left Eye
+
+Right Eye
+```
+
+Ignore everything else.
+
+---
+
+# Phase 4
+
+## Eye Coordinate System
+
+Imagine
+
+```
+A ---------------- B
+
+       ●
+```
+
+Where
+
+```
+A
+
+Left Corner
+
+B
+
+Right Corner
+
+●
+
+Iris
+```
+
+Eye Width
+
+```
+distance(A,B)
+```
+
+Horizontal Ratio
+
+```
+distance(A, Iris)
+
+/
+
+distance(A,B)
+```
+
+This becomes
+
+```
+0
+
+Left Edge
+```
+
+```
+0.5
+
+Center
+```
+
+```
+1
+
+Right Edge
+```
+
+Repeat vertically.
+
+---
+
+# Phase 5
+
+## Mathematics
+
+Euclidean Distance
+
+```
+d = √((x₂-x₁)² + (y₂-y₁)²)
+```
+
+Normalize
+
+```
+ratio
+
+=
+
+current distance
+
+/
+
+total eye width
+```
+
+Normalization makes the algorithm independent of image resolution.
+
+---
+
+# Phase 6
+
+## Head Pose Estimation
+
+Biggest challenge.
+
+If the user moves
+
+```
+Head →
+
+Eye Ratios Change
+
+↓
+
+Wrong Prediction
+```
+
+Need to estimate
+
+```
+Yaw
+
+Pitch
+
+Roll
+```
+
+Use
+
+```
+Nose
+
+Eyes
+
+Chin
+
+Mouth
+```
+
+Estimate
+
+```
+Rotation Matrix
+
+↓
+
+Head Orientation
+```
+
+Compensate before prediction.
+
+---
+
+# Phase 7
+
+## Calibration
+
+Ask the user to look at
+
+```
+•
+
+•
+
+•
+
+•
+
+•
+
+•
+
+•
+
+•
+
+•
+```
+
+Nine screen points.
+
+Store
+
+```
+Eye Ratio X
+
+Eye Ratio Y
+
+↓
+
+Actual Screen X
+
+Actual Screen Y
+```
+
+Dataset
+
+```
+0.32
+
+0.44
+
+↓
+
+240
+
+520
+```
+
+Repeat
+
+50–100 samples.
+
+---
+
+# Why Calibration Works
+
+Every eye is different.
+
+Different
+
+* eye size
+* iris diameter
+* webcam position
+* monitor height
+
+Calibration personalizes the mapping.
+
+---
+
+# Phase 8
+
+## Regression Model
+
+Inputs
+
+```
+Eye Ratio X
+
+Eye Ratio Y
+
+Yaw
+
+Pitch
+```
+
+Outputs
+
+```
+Screen X
+
+Screen Y
+```
+
+Possible models
+
+```
+Linear Regression
+```
+
+```
+Polynomial Regression
+```
+
+```
+Random Forest
+```
+
+```
+Small Neural Network
+```
+
+For Version 1
+
+Linear Regression is sufficient.
+
+---
+
+# Phase 9
+
+## Prediction Pipeline
+
+```
+Frame
+
+↓
+
+Landmarks
+
+↓
+
+Eye Ratios
+
+↓
+
+Head Pose
+
+↓
+
+Regression
+
+↓
+
+Screen Coordinate
+```
+
+---
+
+# Phase 10
+
+## Smoothing
+
+Without smoothing
+
+```
+500
+
+508
+
+490
+
+514
+
+503
+
+487
+```
+
+Cursor shakes.
+
+Apply
+
+Exponential Moving Average
+
+```
+Smoothed
+
+=
+
+α(New)
+
++
+
+(1-α)(Old)
+```
+
+Typical
+
+```
+α = 0.2
+```
+
+Result
+
+```
+500
+
+502
+
+504
+
+505
+
+506
+```
+
+Stable cursor.
+
+---
+
+# Phase 11
+
+## Cursor Overlay
+
+Draw
+
+```
+Green Circle
+```
+
+at
+
+```
+Predicted X
+
+Predicted Y
+```
+
+instead of moving the actual mouse.
+
+Later
+
+replace with
+
+```
+PyAutoGUI
+
+↓
+
+Move Cursor
+```
+
+---
+
+# Prediction Algorithm
+
+```
+Capture Frame
+
+↓
+
+Face Mesh
+
+↓
+
+Extract Eye
+
+↓
+
+Find Iris
+
+↓
+
+Normalize Geometry
+
+↓
+
+Estimate Head Pose
+
+↓
+
+Load Regression Model
+
+↓
+
+Predict Screen Coordinate
+
+↓
+
+Smooth Output
+
+↓
+
+Display Cursor
+```
+
+---
+
+# Mathematical Features
+
+Each frame should produce
+
+```
+Left Eye Horizontal Ratio
+
+Left Eye Vertical Ratio
+
+Right Eye Horizontal Ratio
+
+Right Eye Vertical Ratio
+
+Yaw
+
+Pitch
+
+Roll
+
+Eye Aspect Ratio
+
+Blink State
+
+Frame Timestamp
+```
+
+These become the feature vector.
+
+---
+
+# Performance Target
+
+Camera
+
+```
+30 FPS
+```
+
+Processing
+
+```
+20–25 FPS
+```
+
+Prediction Delay
+
+```
+<100 ms
+```
+
+Memory
+
+```
+<300 MB
+```
+
+---
+
+# Common Problems
+
+### Head Movement
+
+Prediction shifts.
+
+Solution
+
+Head pose estimation.
+
+---
+
+### Glasses
+
+Reflections hide iris.
+
+Solution
+
+Increase exposure compensation.
+
+---
+
+### Low Light
+
+Poor landmark quality.
+
+Solution
+
+Adaptive histogram equalization.
+
+---
+
+### Blink
+
+Iris disappears.
+
+Solution
+
+Ignore blink frames using Eye Aspect Ratio (EAR).
+
+---
+
+### Webcam Angle
+
+Laptop webcams sit above the screen.
+
+Solution
+
+Calibrate using the same viewing setup each session.
+
+---
+
+# Future Improvements
+
+Version 2
+
+* 3D Eye Model
+* Kalman Filter
+* CNN-Based Gaze Estimation
+* Personalized Neural Network
+* Real-time Cursor Control
+* Multi-Monitor Support
+
+Version 3
+
+* Transformer-Based Gaze Prediction
+* Continuous Online Learning
+* Adaptive Calibration
+* Attention Heatmaps
+* Reading Pattern Analysis
+* Accessibility Mode
+
+---
+
+# Success Criteria
+
+The system is considered successful if it can:
+
+* Detect a face reliably.
+* Track both eyes at interactive frame rates.
+* Locate the iris center consistently.
+* Estimate gaze direction after calibration.
+* Predict the user's approximate screen location with usable accuracy.
+* Maintain stable predictions while the user's head moves slightly.
+* Run in real time on a standard laptop webcam without specialized hardware.
+
+---
+
+# Development Roadmap (Suggested Speed-Run)
+
+| Phase | Task                       | Target Time |
+| ----- | -------------------------- | ----------- |
+| 1     | Webcam + OpenCV            | 15 min      |
+| 2     | MediaPipe Face Mesh        | 20 min      |
+| 3     | Iris Landmark Extraction   | 20 min      |
+| 4     | Eye Geometry & Ratios      | 25 min      |
+| 5     | Calibration Interface      | 30 min      |
+| 6     | Regression Model           | 25 min      |
+| 7     | Prediction & Visualization | 20 min      |
+| 8     | Smoothing & Optimization   | 20 min      |
+| 9     | Testing & Refinement       | 30 min      |
+
+**Estimated total:** **3–4 hours** for a working prototype, with additional time for improving calibration and robustness.
+
+---
+
+## Personal Challenge
+
+Knowing the kinds of projects you've been building recently (AI products, developer tools, and hackathon prototypes), I'd encourage treating this not as "another OpenCV project" but as the start of a **modular gaze estimation engine**.
+
+Build every phase as an independent module with clear inputs and outputs. That will make it much easier to improve individual components later—for example, replacing the regression model with a neural network or adding a more sophisticated head-pose estimator—without rewriting the entire application. This modular approach also makes the project a stronger portfolio piece because it demonstrates software architecture in addition to computer vision.
