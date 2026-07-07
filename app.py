@@ -11,7 +11,7 @@ from iris import EyeExtractor
 from geometry import EyeGeometry
 from head_pose import HeadPoseEstimator
 from calibration import GazeCalibrator
-from regression import GazeRegressor
+from neural_regressor import GazeNeuralRegressor
 from smoothing import GazeSmoother
 from overlay import CursorController
 
@@ -92,7 +92,7 @@ def main():
     camera = VideoCamera(device_index=args.device, target_width=args.width, target_height=args.height)
     detector = FaceMeshDetector()
     estimator = HeadPoseEstimator()
-    regressor = GazeRegressor()
+    regressor = GazeNeuralRegressor()
     smoother = GazeSmoother(alpha=args.alpha, use_adaptive=not args.no_adaptive)
     controller = CursorController()
     calibrator = GazeCalibrator()

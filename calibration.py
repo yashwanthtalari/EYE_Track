@@ -10,7 +10,7 @@ from iris import EyeExtractor
 from geometry import EyeGeometry
 from head_pose import HeadPoseEstimator
 from database import CalibrationDatabase
-from regression import GazeRegressor
+from neural_regressor import GazeNeuralRegressor
 
 class GazeCalibrator:
     """
@@ -71,7 +71,7 @@ class GazeCalibrator:
             return False
 
         # Train initial coarse model to evaluate verification points
-        coarse_regressor = GazeRegressor(db_filename="calibration_golden.db")
+        coarse_regressor = GazeNeuralRegressor(db_filename="calibration_golden.db")
         trained_coarse = coarse_regressor.train_from_db()
         if not trained_coarse:
             print("[Calibration] Failed to train initial coarse model.")

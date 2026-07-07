@@ -30,7 +30,9 @@ VisionPoint is a modular, high-accuracy webcam-based gaze tracking engine built 
 * **`geometry.py`**: Normalization ratios and EAR blink metrics.
 * **`head_pose.py`**: Estimates 3D head orientation (Yaw, Pitch, Roll) and Translation vectors (`tx`, `ty`, `tz`).
 * **`calibration.py`**: Fullscreen calibration GUI and state management.
-* **`regression.py`**: Ridge Regression fit with 2nd-degree Polynomial features.
+* **`neural_regressor.py`**: From-scratch NumPy MLP (hand-written forward/backprop, He init, Adam, L2 + early stopping) mapping the 14-feature vector → screen (x, y). Drop-in for the legacy Ridge model.
+* **`train.py`**: Offline trainer/evaluator — trains the MLP on the latest calibration session, reports held-out pixel error, and optionally compares against the Ridge baseline (`--compare`).
+* **`regression.py`**: Legacy Ridge Regression baseline (2nd-degree Polynomial features).
 * **`database.py`**: Local SQLite database interface.
 * **`smoothing.py`**: Standard and adaptive EMA coordinate smoothing filters.
 * **`overlay.py`**: PyAutoGUI cursor controller driver.
