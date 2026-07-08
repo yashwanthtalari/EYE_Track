@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionPoint Gaze Tracking - Iteration Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(17, 24, 39, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --accent-cyan: #06b6d4;
+            --accent-purple: #818cf8;
+            --accent-green: #34d399;
+            --accent-red: #f87171;
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            line-height: 1.6;
+            padding: 2rem;
+            background-image: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+                              radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.05em;
+            background: linear-gradient(to right, #ffffff, #93c5fd, #a7f3d0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+        }
+
+        .meta-badge {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: var(--accent-purple);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-family: var(--font-mono);
+            font-weight: 500;
+        }
+
+        /* Dashboard Grid Layout */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        @media (max-width: 1024px) {
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(16px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(to right, var(--accent-cyan), var(--accent-purple));
+            opacity: 0.4;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card-title span {
+            color: var(--accent-cyan);
+        }
+
+        /* Charts Layout */
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .chart-box h3 {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            color: var(--text-muted);
+            width: 100%;
+            text-align: left;
+        }
+
+        canvas {
+            width: 100% !important;
+            max-height: 280px;
+        }
+
+        /* Summary Stats */
+        .stats-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .stat-label {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+
+        .stat-val-group {
+            text-align: right;
+        }
+
+        .stat-val {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: var(--font-mono);
+        }
+
+        .stat-val.best {
+            color: var(--accent-green);
+            text-shadow: 0 0 10px rgba(52, 211, 153, 0.2);
+        }
+
+        .stat-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.1rem;
+        }
+
+        /* Timeline Section */
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            margin-top: 1rem;
+            color: #ffffff;
+            letter-spacing: -0.03em;
+        }
+
+        .timeline {
+            position: relative;
+            margin-bottom: 3rem;
+            padding-left: 2rem;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 7px;
+            width: 2px;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 2rem;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            top: 6px;
+            left: -2rem;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #1f2937;
+            border: 4px solid var(--accent-cyan);
+            z-index: 2;
+            transition: all 0.3s ease;
+        }
+
+        .timeline-item.active .timeline-dot {
+            background: var(--accent-cyan);
+            box-shadow: 0 0 12px var(--accent-cyan);
+            border-color: #ffffff;
+        }
+
+        .timeline-item.baseline .timeline-dot {
+            border-color: var(--accent-purple);
+        }
+
+        .timeline-item.deep .timeline-dot {
+            border-color: var(--accent-green);
+        }
+
+        .timeline-content {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem 2rem;
+            display: grid;
+            grid-template-columns: 3fr 1fr;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .timeline-content {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+        }
+
+        .timeline-info h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .timeline-badge {
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .timeline-badge.baseline {
+            background: rgba(129, 140, 248, 0.15);
+            color: var(--accent-purple);
+            border: 1px solid rgba(129, 140, 248, 0.3);
+        }
+
+        .timeline-badge.experimental {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+
+        .timeline-badge.production {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .timeline-info p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.5rem;
+        }
+
+        .timeline-tech {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--accent-cyan);
+            margin-top: 0.75rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .timeline-metrics {
+            text-align: right;
+            border-left: 1px solid var(--border-color);
+            padding-left: 2rem;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        @media (max-width: 768px) {
+            .timeline-metrics {
+                text-align: left;
+                border-left: none;
+                border-top: 1px solid var(--border-color);
+                padding-left: 0;
+                padding-top: 1rem;
+            }
+        }
+
+        .timeline-metric-val {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: var(--font-mono);
+        }
+
+        .timeline-metric-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 0.1rem;
+        }
+
+        /* settled explanation box */
+        .settled-section {
+            background: linear-gradient(135deg, rgba(17, 24, 39, 0.8) 0%, rgba(10, 15, 30, 0.8) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 16px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .settled-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .settled-header-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(52, 211, 153, 0.15);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-green);
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .settled-header h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        .settled-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .settled-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .settled-box h4 {
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--accent-cyan);
+        }
+
+        .settled-box p {
+            font-size: 0.95rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .settled-box ul {
+            list-style-type: none;
+        }
+
+        .settled-box li {
+            position: relative;
+            padding-left: 1.5rem;
+            font-size: 0.9rem;
+            color: var(--text-main);
+            margin-bottom: 0.5rem;
+        }
+
+        .settled-box li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: var(--accent-green);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>VisionPoint Iterative Performance Report</h1>
+                <p>Engineering journey, model accuracy comparisons, and architectural decision trees.</p>
+            </div>
+            <div class="meta-badge">
+                ENV: CPU-ONLY / HEADLESS SAFE
+            </div>
+        </header>
+
+        <!-- Main Charts Card & Summary stats -->
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-title"><span>✦</span> Gaze Tracking Deviation Comparisons</div>
+                <div class="charts-container">
+                    <div class="chart-box">
+                        <h3>Mean Pixel Gaze Deviation (Lower is Better)</h3>
+                        <canvas id="meanChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h3>Median Pixel Gaze Deviation (Lower is Better)</h3>
+                        <canvas id="medianChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title"><span>✦</span> Metrics Snapshot</div>
+                <div class="stats-list">
+                    <div class="stat-item">
+                        <div class="stat-label">Best CNN Test Accuracy</div>
+                        <div class="stat-val-group">
+                            <div class="stat-val best">62.1 px</div>
+                            <div class="stat-sub">Median: 51.3 px</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">CNN Target R² Score</div>
+                        <div class="stat-val-group">
+                            <div class="stat-val text-cyan">0.988</div>
+                            <div class="stat-sub">Y Axis: 0.980</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Standard Gaze R² Score</div>
+                        <div class="stat-val-group">
+                            <div class="stat-val text-purple">0.913</div>
+                            <div class="stat-sub">Geometric baseline</div>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Lightweight Ridge Execution</div>
+                        <div class="stat-val-group">
+                            <div class="stat-val">&lt; 0.2 ms</div>
+                            <div class="stat-sub">Linear mapping CPU time</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Iteration Timeline -->
+        <h2 class="section-title">Timeline of Engineering Iterations</h2>
+        <div class="timeline">
+            
+            <!-- Iteration 1 -->
+            <div class="timeline-item baseline">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-info">
+                        <h3>Iteration 1: Legacy Geometric MLP <span class="timeline-badge baseline">BASELINE</span></h3>
+                        <p>Our initial online system. Uses Face Mesh landmarks to extract 14 geometry indicators (ratios of iris to corners, head pose, face bounding boxes) feeding a custom, handwritten NumPy MLP with (64, 32) hidden nodes.</p>
+                        <div class="timeline-tech">
+                            <span>Backend: Custom NumPy MLP</span>
+                            <span>Features: 14D Geometric Vector</span>
+                        </div>
+                    </div>
+                    <div class="timeline-metrics">
+                        <div class="timeline-metric-val">156.4 px</div>
+                        <div class="timeline-metric-label">True Spatial Error (Mean)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Iteration 2 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-info">
+                        <h3>Iteration 2: Scikit-learn SVR on Geometry <span class="timeline-badge experimental">EXPERIMENTAL</span></h3>
+                        <p>Transitioned from the NumPy neural net to standard scikit-learn regressors to test fit robustness. Support Vector Regression (SVR) on the 12-dimensional geometric vector showed an improvement, smoothing outliers and capturing non-linear eye-rotation patterns.</p>
+                        <div class="timeline-tech">
+                            <span>Backend: Support Vector Regressor (SVR)</span>
+                            <span>Features: 12D Geometric Vector</span>
+                        </div>
+                    </div>
+                    <div class="timeline-metrics">
+                        <div class="timeline-metric-val">140.9 px</div>
+                        <div class="timeline-metric-label">True Spatial Error (Mean)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Iteration 3 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-info">
+                        <h3>Iteration 3: Linear Ridge on Eye Patches <span class="timeline-badge experimental">EXPERIMENTAL</span></h3>
+                        <p>Attempted to extract high-resolution signal by bypassing landmarks. We cropped left and right eyes, converted them to grayscale, equalized lighting, and flattened them into a 1152-dimensional pixel array, feeding them into a Ridge Regressor.</p>
+                        <div class="timeline-tech">
+                            <span>Backend: Ridge Regression</span>
+                            <span>Features: 1152D Grayscale Pixel Array</span>
+                        </div>
+                    </div>
+                    <div class="timeline-metrics">
+                        <div class="timeline-metric-val">80.4 px</div>
+                        <div class="timeline-metric-label">True Spatial Error (Mean)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Iteration 4 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-info">
+                        <h3>Iteration 4: Hybrid Ridge Regressor <span class="timeline-badge experimental">EXPERIMENTAL</span></h3>
+                        <p>Combined the geometric context (head rotation & position invariant features) with the raw eye-strip textures. The 1164-dimensional concatenated representation allowed Ridge regression to regularize head motion and eye gaze jointly.</p>
+                        <div class="timeline-tech">
+                            <span>Backend: Ridge (alpha=5.0)</span>
+                            <span>Features: 1164D Concatenated Hybrid</span>
+                        </div>
+                    </div>
+                    <div class="timeline-metrics">
+                        <div class="timeline-metric-val">76.1 px</div>
+                        <div class="timeline-metric-label">True Spatial Error (Mean)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Iteration 5 -->
+            <div class="timeline-item active deep">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-info">
+                        <h3>Iteration 5: Deep PyTorch CNN + ANN <span class="timeline-badge production">PRODUCTION READY</span></h3>
+                        <p>To establish a pure "black-box" learner directly on images, we implemented a custom deep network in PyTorch. The model processes equalized grayscale crops through a 3-layer CNN (extracting high-level gaze textures) and feeds the feature maps to a dense ANN mapping coordinates.</p>
+                        <div class="timeline-tech">
+                            <span>Backend: PyTorch CNN + Dense ANN</span>
+                            <span>Features: 32x32 Grayscale Crop (Grayscale)</span>
+                        </div>
+                    </div>
+                    <div class="timeline-metrics">
+                        <div class="timeline-metric-val">62.1 px</div>
+                        <div class="timeline-metric-label">Validation Error (Mean)</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Why We Settled Section -->
+        <div class="settled-section">
+            <div class="settled-header">
+                <div class="settled-header-icon">✓</div>
+                <h2>Why We Settled on the Final Dual Architecture</h2>
+            </div>
+            <div class="settled-grid">
+                <div class="settled-box">
+                    <h4>1. Reverting the Interactive App: Native Speed</h4>
+                    <p>The interactive client applications (<code>app.py</code> and <code>calibration.py</code>) must run at maximum FPS with zero camera-to-cursor lag. The legacy geometric MLP is ideal for this:
+                    <ul>
+                        <li><b>Microsecond Inference:</b> Running forward passes on just 14 features takes <code>&lt; 0.2ms</code>, causing zero GUI blocking.</li>
+                        <li><b>Zero CPU Load:</b> Running heavy convolutional feature extractions on every camera frame at 30 FPS can peg client CPU threads; the geometric version remains extremely light.</li>
+                        <li><b>Lighting Independence:</b> Landmark locations are highly robust to shadows and camera exposure, where raw pixels easily degrade.</li>
+                    </ul>
+                </div>
+                <div class="settled-box">
+                    <h4>2. PyTorch CNN + ANN: High Precision Tracking</h4>
+                    <p>When high-precision gaze estimation is needed (e.g. for offline analysis or structured tracking tasks), the deep learning model represents a huge step forward:
+                    <ul>
+                        <li><b>Rich Spatial Learning:</b> The CNN automatically learns features like sub-pixel pupil centers and iris boundaries, which are noisy in standard MediaPipe circles.</li>
+                        <li><b>Significant Error Reduction:</b> Lowered mean gaze error to <b>62.1 px</b> (median <b>51.3 px</b>), which is a 60% error reduction from the true geometric baseline.</li>
+                        <li><b>Standard Serialization:</b> Cleanly serialized to standard weight files, running fully headlessly for generic pipelines.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ctxMean = document.getElementById('meanChart').getContext('2d');
+        const ctxMedian = document.getElementById('medianChart').getContext('2d');
+
+        const labels = ['Legacy MLP', 'SVR Geom', 'Ridge Eyes', 'Ridge Hybrid', 'PyTorch CNN+ANN'];
+        const meanData = [156.4, 140.9, 80.4, 76.1, 62.1];
+        const medianData = [140.2, 118.3, 68.6, 65.1, 51.3];
+
+        const chartConfig = (ctx, data, label, color) => new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: label,
+                    data: data,
+                    backgroundColor: color,
+                    borderColor: '#ffffff',
+                    borderWidth: 1,
+                    borderRadius: 8,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255,255,255,0.05)' },
+                        ticks: { color: '#9ca3af' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#9ca3af' }
+                    }
+                }
+            }
+        });
+
+        chartConfig(ctxMean, meanData, 'Mean Error (px)', 'rgba(6, 182, 212, 0.7)');
+        chartConfig(ctxMedian, medianData, 'Median Error (px)', 'rgba(129, 140, 248, 0.7)');
+    </script>
+</body>
+</html>

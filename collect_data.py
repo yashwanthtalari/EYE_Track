@@ -44,6 +44,15 @@ def parse_args():
                    help="Extra padding around the detected face as a fraction of face size (default: 0.4)")
     p.add_argument("--crop-size", type=int, default=224,
                    help="Output face-crop resolution in pixels, square (default: 224)")
+    # --- Tier D: continuous / multi-head-position collection ---
+    p.add_argument("--mode", choices=["grid", "continuous"], default="grid",
+                   help="grid = dwell on each dot (classic); continuous = follow a roaming dot (default: grid)")
+    p.add_argument("--rounds", type=int, default=3,
+                   help="continuous: number of head-position rounds (variety for head invariance) (default: 3)")
+    p.add_argument("--round-seconds", type=float, default=40.0,
+                   help="continuous: seconds of capture per round (default: 40)")
+    p.add_argument("--capture-every", type=int, default=2,
+                   help="continuous: save every Nth detected frame (default: 2)")
     return p.parse_args()
 
 
@@ -119,6 +128,168 @@ def draw_target(ui, point, screen_w, screen_h, color):
     return px, py
 
 
+# --------------------------------------------------------------------------
+# Tier D: continuous capture (roaming dot) with multiple head positions.
+# A dot sweeps smoothly across the whole screen while frames are captured
+# continuously and labeled with the dot's live position. Repeated over several
+# "rounds", each with a different head pose, so the model learns to separate
+# head movement from eye movement -- the main cause of poor cross-session error.
+# --------------------------------------------------------------------------
+HEAD_PROMPTS = [
+    "Sit naturally  -  head CENTERED",
+    "Turn/lean your head slightly LEFT",
+    "Turn/lean your head slightly RIGHT",
+    "Move a little CLOSER to the screen",
+    "Lean back  -  a little FARTHER away",
+    "Tilt your head slightly (chin up/down)",
+]
+
+
+def build_sweep_path(margin, rows=7):
+    """Serpentine raster of normalized waypoints covering the whole screen."""
+    lo, hi = margin, 1.0 - margin
+    pts = []
+    for r in range(rows):
+        y = lo + (hi - lo) * r / (rows - 1)
+        xs = (lo, hi) if r % 2 == 0 else (hi, lo)
+        for x in xs:
+            pts.append((x, y))
+    return pts
+
+
+def sample_path(waypoints, prog):
+    """Position along the polyline at progress prog in [0,1] (linear interp)."""
+    prog = min(max(prog, 0.0), 1.0)
+    n = len(waypoints)
+    if n == 1:
+        return waypoints[0]
+    t = prog * (n - 1)
+    i = int(t)
+    if i >= n - 1:
+        return waypoints[-1]
+    frac = t - i
+    x = waypoints[i][0] + (waypoints[i + 1][0] - waypoints[i][0]) * frac
+    y = waypoints[i][1] + (waypoints[i + 1][1] - waypoints[i][1]) * frac
+    return (x, y)
+
+
+def grid_cell_index(nx, ny, cols, rows, margin):
+    """Bucket a continuous target into a coarse grid cell, so group-aware
+    (leave-point-out) evaluation still works on continuous data."""
+    lo, hi = margin, 1.0 - margin
+    span = (hi - lo) if hi > lo else 1.0
+    fx = (nx - lo) / span
+    fy = (ny - lo) / span
+    cx = min(cols - 1, max(0, int(fx * cols)))
+    cy = min(rows - 1, max(0, int(fy * rows)))
+    return cy * cols + cx
+
+
+def run_continuous(args, camera, detector, writer, images_dir, session_id,
+                   screen_w, screen_h, window_name):
+    """Capture rounds of a roaming dot at varied head positions. Returns
+    (total_saved, aborted)."""
+    cols, rows = args.grid
+    waypoints = build_sweep_path(args.margin)
+    total_saved = 0
+
+    for r in range(args.rounds):
+        prompt = HEAD_PROMPTS[r % len(HEAD_PROMPTS)]
+
+        # --- Ready screen: wait for SPACE (ESC aborts) ---
+        ready = False
+        while not ready:
+            success, bgr, rgb = camera.read_frame()
+            if not success:
+                continue
+            face_ok = detector.find_face_landmarks(rgb) is not None
+            ui = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
+            cv2.putText(ui, f"ROUND {r + 1} / {args.rounds}", (60, 120),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 200, 255), 3, cv2.LINE_AA)
+            cv2.putText(ui, prompt, (60, 200),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.1, (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(ui, "Follow the dot with your EYES (let your head stay in this pose).",
+                        (60, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2, cv2.LINE_AA)
+            cv2.putText(ui, "SPACE = start round    |    ESC = quit and save",
+                        (60, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (180, 180, 180), 2, cv2.LINE_AA)
+            if not face_ok:
+                cv2.putText(ui, "NO FACE DETECTED - align yourself in the camera",
+                            (60, screen_h - 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+                            (0, 165, 255), 2, cv2.LINE_AA)
+            cv2.imshow(window_name, ui)
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:
+                return total_saved, True
+            if key == 32 and face_ok:
+                ready = True
+
+        # --- Countdown 3..2..1 so the first frames aren't garbage ---
+        for c in (3, 2, 1):
+            t0 = time.time()
+            while time.time() - t0 < 0.7:
+                success, bgr, rgb = camera.read_frame()
+                ui = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
+                cv2.putText(ui, str(c), (screen_w // 2 - 30, screen_h // 2),
+                            cv2.FONT_HERSHEY_SIMPLEX, 4.0, (0, 200, 255), 6, cv2.LINE_AA)
+                cv2.imshow(window_name, ui)
+                if (cv2.waitKey(1) & 0xFF) == 27:
+                    return total_saved, True
+
+        # --- Capture loop: dot roams for round_seconds ---
+        start = time.time()
+        frame_i = 0
+        round_saved = 0
+        while True:
+            elapsed = time.time() - start
+            if elapsed >= args.round_seconds:
+                break
+            success, bgr, rgb = camera.read_frame()
+            if not success:
+                continue
+
+            prog = elapsed / args.round_seconds
+            tx, ty = sample_path(waypoints, prog)
+            landmarks = detector.find_face_landmarks(rgb)
+            face_ok = landmarks is not None
+
+            ui = np.zeros((screen_h, screen_w, 3), dtype=np.uint8)
+            gx, gy = int(tx * screen_w), int(ty * screen_h)
+            cv2.circle(ui, (gx, gy), 28, (0, 0, 255), 2)
+            cv2.circle(ui, (gx, gy), 9, (0, 0, 255), -1)
+            cv2.rectangle(ui, (60, screen_h - 60),
+                          (60 + int((screen_w - 120) * prog), screen_h - 45),
+                          (0, 200, 255), -1)
+            cv2.putText(ui, f"Round {r + 1}/{args.rounds}  -  {prompt}  -  saved {round_saved}",
+                        (60, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2, cv2.LINE_AA)
+            if not face_ok:
+                cv2.putText(ui, "NO FACE", (60, 110), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.9, (0, 165, 255), 2, cv2.LINE_AA)
+
+            frame_i += 1
+            if face_ok and (frame_i % args.capture_every == 0):
+                crop = crop_face(bgr, landmarks, camera.target_width, camera.target_height,
+                                 args.crop_pad, args.crop_size)
+                if crop is not None:
+                    pidx = grid_cell_index(tx, ty, cols, rows, args.margin)
+                    fname = f"{session_id}_r{r:02d}_f{frame_i:05d}.jpg"
+                    cv2.imwrite(os.path.join(images_dir, fname), crop)
+                    writer.writerow([
+                        fname, session_id, pidx,
+                        f"{tx:.5f}", f"{ty:.5f}",
+                        gx, gy, screen_w, screen_h,
+                    ])
+                    total_saved += 1
+                    round_saved += 1
+
+            cv2.imshow(window_name, ui)
+            if (cv2.waitKey(1) & 0xFF) == 27:
+                return total_saved, True
+
+        print(f"[Collect] Round {r + 1}/{args.rounds} done ({round_saved} images).")
+
+    return total_saved, False
+
+
 def main():
     args = parse_args()
     cols, rows = args.grid
@@ -152,8 +323,25 @@ def main():
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-    print(f"[Collect] {cols}x{rows} grid = {len(points)} points, {args.samples} images each.")
     print(f"[Collect] Saving to: {os.path.abspath(args.out)}")
+
+    # --- Tier D: continuous roaming-dot mode with head-position rounds ---
+    if args.mode == "continuous":
+        print(f"[Collect] Continuous mode: {args.rounds} rounds x {args.round_seconds:.0f}s, "
+              f"saving every {args.capture_every} frames.")
+        print("[Collect] SPACE = start each round | ESC = quit and save")
+        total_saved, aborted = run_continuous(
+            args, camera, detector, writer, images_dir, session_id,
+            screen_w, screen_h, window_name)
+        csv_file.close()
+        camera.release()
+        cv2.destroyAllWindows()
+        tag = "Aborted" if aborted else "Complete"
+        print(f"[Collect] {tag}. {total_saved} images written to {images_dir}")
+        print(f"[Collect] Labels: {labels_path}")
+        return
+
+    print(f"[Collect] {cols}x{rows} grid = {len(points)} points, {args.samples} images each.")
     print("[Collect] SPACE = capture point | S = skip | ESC = quit")
 
     point_idx = 0
